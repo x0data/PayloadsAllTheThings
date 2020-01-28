@@ -6,15 +6,15 @@
 
 * [Tools](#tools)
 * [Basic exploitation](#basic-exploitation)
-    * [16 bits Unicode encoding](#)
-    * [UTF-8 Unicode encoding](#)
-    * [Bypass "../" replaced by ""](#)
-    * [Bypass "../" with ";"](#)
-    * [Double URL encoding](#)
+    * [16 bits Unicode encoding](#16-bits-unicode-encoding)
+    * [UTF-8 Unicode encoding](#utf-8-unicode-encoding)
+    * [Bypass "../" replaced by ""](#bypass--replaced-by-)
+    * [Bypass "../" with ";"](#bypass--with-)
+    * [Double URL encoding](#double-url-encoding)
     * [UNC Bypass](#unc-bypass)
 * [Path Traversal](#path-traversal)
-    * [Interesting Linux files](#)
-    * [Interesting Windows files](#)
+    * [Interesting Linux files](#interesting-linux-files)
+    * [Interesting Windows files](#interesting-windows-files)
 * [References](#references)
 
 ## Tools
@@ -117,6 +117,8 @@ An attacker can inject a Windows UNC share ('\\UNC\share\name') into a software 
 /home/$USER/.bash_history
 /home/$USER/.ssh/id_rsa
 /var/run/secrets/kubernetes.io/serviceaccount
+/var/lib/mlocate/mlocate.db
+/var/lib/mlocate.db
 ```
 
 ### Interesting Windows files
@@ -144,6 +146,8 @@ c:/unattend.txt
 c:/unattend.xml
 c:/unattended.txt
 c:/unattended.xml
+c:/windows/repair/sam
+c:/windows/repair/system
 ```
 
 The following log files are controllable and can be included with an evil payload to achieve a command execution
